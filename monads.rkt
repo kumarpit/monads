@@ -249,17 +249,26 @@
                              (return i)))
           (return evens)))
 
-;; This gets expanded to
+;; Expands to:
 #;
 (run-io (>>= (mdisplay "Enter a number")
              (λ (_)
-               (>>= mread (λ (n)
-                            (>>= (return (for/list [(i n)] i))
-                                 (λ (all-n)
-                                   (>>= (return (>>= all-n
-                                                     (λ (i)
-                                                       (if (even? i)
-                                                           (return i)
-                                                           (fail)))))
-                                        (λ (evens)
-                                          (return evens))))))))))
+               (>>= mread
+                    (λ (n)
+                      (>>= (return (for/list [(i n)] i))
+                           (λ (all-n)
+                             (>>= (return
+                                   (>>= all-n
+                                        (λ (i)
+                                          (if (even? i)
+                                              (return i)
+                                              (fail)))))
+                                  (λ (evens)
+                                    (return evens))))))))))
+
+;; Something that took me a while to understand was why the return value of the
+;; block above was a list instead of a ~Return struct. The answer lies in the
+;; fact that the run-io loop tries to coerce the <~Return res> struct to a IO
+;; monad class, which then, by the definition of the ~Return monad class, calls
+;; the IO returner -- unwrapping the result from the ~Return.
+                                                            
