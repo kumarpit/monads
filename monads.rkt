@@ -248,3 +248,18 @@
                              #:guard (even? i)
                              (return i)))
           (return evens)))
+
+;; This gets expanded to
+#;
+(run-io (>>= (mdisplay "Enter a number")
+             (λ (_)
+               (>>= mread (λ (n)
+                            (>>= (return (for/list [(i n)] i))
+                                 (λ (all-n)
+                                   (>>= (return (>>= all-n
+                                                     (λ (i)
+                                                       (if (even? i)
+                                                           (return i)
+                                                           (fail)))))
+                                        (λ (evens)
+                                          (return evens))))))))))
