@@ -200,13 +200,37 @@
 ;; Monad Type Class instances
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; List Monad
+
 (define MonadClass::List
   (MonadClass
    (λ () '())
    (λ (x) (list x))
    (λ (xs f) (append-map (λ (x) (coerce MonadClass::List (f x))) xs))
    not-coercable))
-;; List Monad
+
+;; IO Monad (Haskell-like, i.e lazy)
+
+(struct IOReturn (thunk)
+  #:methods gen:monad [(define (monad->monad-class m) MonadClass::IO)])
+
+(struct IOChain (io k)
+  #:methods gen:monad [(define (monad->monad-class m) MonadClass::IO)])
+
+(define MonadClass::IO
+  (MonadClass (λ () (error 'fail))
+              (λ (x) (IOReturn (λ () x)))
+              (λ (ma a->mb) (IOChain ma a->mb))
+              not-coercable))
+
+(define (mdisplay x) (IOReturn (λ () (display x))))
+(define mnewline     (IOReturn newline))
+(define mread        (IOReturn read))
+
+(define (run-io io)
+  (match (coerce MonadClass::IO io)
+    [(IOReturn thunk) (thunk)]
+    [(IOChain io k) (run-io (k (run-io io)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Examples
@@ -216,3 +240,11 @@
                 #:guard (odd? i)
                 (return (* i 2)))
               (list 2 6 10))
+
+(run-io (do (mdisplay "Enter a number: ")
+          n <- mread
+          all-n <- (return (for/list [(i n)] i))
+          evens <- (return (do i <- all-n
+                             #:guard (even? i)
+                             (return i)))
+          (return evens)))
