@@ -86,9 +86,9 @@
 ;; dictionary instance to use but we would need do infer it at runtime.
 
 (struct MonadClass
-  (failer    ;; -> (M a)
-   returner  ;; a -> (M a)
-   binder    ;; (M a) (a -> (M b)) -> (M b)
+  (failer    ;; -> (MonadClassof A)
+   returner  ;; A -> (MonadClassof A)
+   binder    ;; (MonadClassof A) (A -> (MonadClassof B)) -> (MonadClassof B)
    coercer)) ;; N (M a) -> (N a)
 ;; interp. Monad type class representation
 
@@ -99,7 +99,7 @@
 ;; interp. Generic method on all MonadClass type classes to determine their
 ;;         monad type
 
-;; All (A B) MonadClass::<A> MonadClass::<B> -> MonadClass::<A>
+;; (MonadClassof A) (MonadClassof B) -> (MonadClassof A)
 ;; Doesn't try to coerce the monad instance m to N
 ;; Effect: Signals an error if there is a mismatch between type of m and N
 (define (not-coercable N m)
@@ -163,19 +163,38 @@
 
 ;; Monad interface with ad-hoc polymorphism
 
+;; A -> (~Return A)
+;; Wraps a value into a "return" quasi-monad
 (define (return x)
   (~Return x))
 
+;; -> (~Fail)
+;; Returns a "fail" quasi-monad
 (define (fail)
   (~Fail))
 
+;; (MonadClassof A) (A -> (MonadClassof B)) -> (MonadClassof B)
+;; >>= implementation with ad-hoc polymorphism
 (define (>>= ma a->mb)
   (define binder (MonadClass-binder (monad->monad-class ma)))
   (binder ma a->mb))
 
+;; (MonadClassof A) (MonadClassof B) -> (MonadClass A)
+;; Trys to coerce the monad instance ma to monad class N
+;; Effect: Will throw an error if coercision fails
 (define (coerce N ma)
   (define coercer (MonadClass-coercer (monad->monad-class ma)))
   (coercer N ma))
+
+;; Generic Haskell-like `do` syntax
+(define-syntax do
+  (syntax-rules (<-)
+    [(_ mexp) mexp]
+    [(_ #:guard exp rest ...) (if exp (do rest ...) (fail))]
+    [(_ var <- mexp rest ...) (>>= mexp (λ (var)
+                                          (do rest ...)))]
+    [(_ mexp rest ...)        (>>= mexp (λ (_)
+                                          (do rest ...)))]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Monad Type Class instances
@@ -187,3 +206,13 @@
    (λ (x) (list x))
    (λ (xs f) (append-map (λ (x) (coerce MonadClass::List (f x))) xs))
    not-coercable))
+;; List Monad
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Examples
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(check-equal? (do i <- '(1 2 3 4 5)
+                #:guard (odd? i)
+                (return (* i 2)))
+              (list 2 6 10))
