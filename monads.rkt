@@ -78,10 +78,11 @@
 ;; Towards polymorphism
 (require racket/generic)
 
-;; Haskell uses dictionary passing to implement dynamic dispatch for the monadic
-;; combinators -- this is easy for something a like a bind (>>=) in which the
-;; monadic type is passed as an argument, but for returns/fails we do not know
-;; which monad to use. Haskell uses the type system to determine which
+;; Haskell uses dictionary passing to implement dynamic dispatch-like behaviour
+;; for the monadic combinators (it is not really dynamic - types are determined
+;; at compile time) -- this is easy for something a like a bind (>>=) in which
+;; the monadic type is passed as an argument, but for returns/fails we do not
+;; know which monad to use. Haskell uses the type system to determine which
 ;; dictionary instance to use but we would need do infer it at runtime.
 
 ;; Monad Type Class declaration
