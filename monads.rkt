@@ -85,19 +85,23 @@
 ;; know which monad to use. Haskell uses the type system to determine which
 ;; dictionary instance to use but we would need do infer it at runtime.
 
-;; Monad Type Class declaration
 (struct MonadClass
   (failer    ;; -> (M a)
    returner  ;; a -> (M a)
    binder    ;; (M a) (a -> (M b)) -> (M b)
    coercer)) ;; N (M a) -> (N a)
+;; interp. Monad type class representation
 
-;; Generic method on all MonadClass type classes to determine their monad type
 (define-generics monad
   (monad->monad-class monad)
   #:defaults ([null? (define (monad->monad-class m) MonadClass::List)]
               [pair? (define (monad->monad-class m) MonadClass::List)]))
+;; interp. Generic method on all MonadClass type classes to determine their
+;;         monad type
 
+;; All (A B) MonadClass::<A> MonadClass::<B> -> MonadClass::<A>
+;; Doesn't try to coerce the monad instance m to N
+;; Effect: Signals an error if there is a mismatch between type of m and N
 (define (not-coercable N m)
   (if (eq? (monad->monad-class m) N)
       m
@@ -107,33 +111,63 @@
 ;; monad type is not yet known. For these cases, we introduce neutral,
 ;; "quasi-monad" type clasess.
 
-(struct QuasiMonad::Return (value)
+;; Read QuasiMonads as "almost" monads -- they are just intermediate
+;; representation until the concrete monad type can be determined.
+
+;; Note: I prepend quasi-monad constructors with ~ to distinguish them and
+;;       regular monad constructors (eg. list).
+
+(struct ~Return (value)
   #:methods gen:monad [(define (monad->monad-class m)
-                         MonadClass::Return)])
-(struct QuasiMonad::Fail ()
+                         MonadClass::QuasiMonad::Return)])
+
+(struct ~Fail ()
   #:methods gen:monad [(define (monad->monad-class m)
-                         MonadClass::Fail)])
-(struct QuasiMonad::Bind (ma a->mb)
+                         MonadClass::QuasiMonad::Fail)])
+
+(struct ~Bind (ma a->mb)
   #:methods gen:monad [(define (monad->monad-class m)
-                         MonadClass::Bind)])
+                         MonadClass::QuasiMonad::Bind)])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; QuasiMonad instances
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Identical to the identity monad
-(define MonadClass::Return
+(define MonadClass::QuasiMonad::Return
   (MonadClass
    (λ () (error 'fail))
-   (λ (x) (QuasiMonad::Return x))
-   (λ (m f) (f (QuasiMonad::Return-value m)))
-   (λ (N m) ((MonadClass-returner N) (QuasiMonad::Return-value m)))))
+   (λ (x) (~Return x))
+   (λ (m f) (f (~Return-value m)))
+   (λ (N m) ((MonadClass-returner N) (~Return-value m)))))
+;; interp. This is identical to the Identity monad and serves as a temporary
+;;         monadic wrapper for the value
 
+(define MonadClass::QuasiMonad::Fail
+  (MonadClass
+   'invalid ; User code can never be "in" a failure monad. Don't need to
+   'invalid ; provide implementations because these are "quasi" monads
+   (λ (ma a->mb) (~Bind (ma a->mb)))
+   (λ (N m) ((MonadClass-failer N)))))
+;; interp. Used when `fail` is called in a context where the concrete monad type
+;;         is not yet known
 
-
-
+(define MonadClass::QuasiMonad::Bind
+  (MonadClass
+   'invalid ; Again, user code can never be "in" a bind monad.
+   'invalid
+   (λ (ma a->mb) (~Bind (ma a->mb)))
+   (λ (N m) (>>= (coerce N (~Bind-ma m))
+                 (~Bind-a->mb m)))))
+;; interp. Used when `>>=` is called in a context where the concrete monad type
+;;         is not yet known
 
 ;; Monad interface with ad-hoc polymorphism
+
+(define (return x)
+  (~Return x))
+
+(define (fail)
+  (~Fail))
 
 (define (>>= ma a->mb)
   (define binder (MonadClass-binder (monad->monad-class ma)))
